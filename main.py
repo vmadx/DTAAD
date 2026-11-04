@@ -15,14 +15,20 @@ from pprint import pprint
 
 
 def convert_to_windows(data, model):
-    windows = []
     w_size = model.n_window
+    if 'DTAAD' in args.model or 'Attention' in args.model or 'TranAD' in args.model:
+        # Build all causal windows as an unfold view instead of Python-looping
+        # over every row. The first window is left-padded with the first row.
+        padding = data[0].repeat(w_size - 1, 1)
+        padded = torch.cat([padding, data], dim=0)
+        return padded.unfold(0, w_size, 1).permute(0, 2, 1)
+    windows = []
     for i, g in enumerate(data):
         if i >= w_size:
-            w = data[i - w_size:i]  # cut
+            w = data[i - w_size:i]
         else:
-            w = torch.cat([data[0].repeat(w_size - i, 1), data[0:i]])  # pad
-        windows.append(w if 'DTAAD' in args.model or 'Attention' in args.model or 'TranAD' in args.model else w.view(-1))
+            w = torch.cat([data[0].repeat(w_size - i, 1), data[0:i]])
+        windows.append(w.view(-1))
     return torch.stack(windows)
 
 
@@ -327,9 +333,9 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training=True):
         l = nn.MSELoss(reduction='none')
         _lambda = 0.8
         model.to(torch.device(args.Device))
-        data_x = torch.DoubleTensor(data)
+        data_x = torch.as_tensor(data, dtype=torch.float64)
         dataset = TensorDataset(data_x, data_x)
-        bs = model.batch if training else len(data)
+        bs = model.batch
         dataloader = DataLoader(dataset, batch_size=bs)
         n = epoch + 1
         w_size = model.n_window
@@ -351,14 +357,18 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training=True):
             tqdm.write(f'Epoch {epoch},\tL1 = {np.mean(l1s)}')
             return np.mean(l1s), optimizer.param_groups[0]['lr']
         else:
-            model.to(torch.device('cpu'))
-            for d, _ in dataloader:
-                window = d.permute(0, 2, 1)
-                elem = window[:, :, -1].view(1, bs, feats)
-                z = model(window)
-                z = z[1].permute(1, 0, 2)
-            loss = l(z, elem)[0]
-            return loss.detach().numpy(), z.detach().numpy()[0]
+            model.to(torch.device(args.Device))
+            losses, predictions = [], []
+            with torch.no_grad():
+                for d, _ in dataloader:
+                    d = d.to(torch.device(args.Device))
+                    local_bs = d.shape[0]
+                    window = d.permute(0, 2, 1)
+                    elem = window[:, :, -1].view(1, local_bs, feats)
+                    z = model(window)[1].permute(1, 0, 2)
+                    losses.append(l(z, elem)[0].detach().cpu())
+                    predictions.append(z[0].detach().cpu())
+            return torch.cat(losses).numpy(), torch.cat(predictions).numpy()
     else:
         model.to(torch.device(args.Device))
         data = data.to(torch.device(args.Device))
