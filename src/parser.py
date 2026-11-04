@@ -6,7 +6,7 @@ parser.add_argument('--dataset',
                     type=str,
                     required=False,
                     default='synthetic',
-                    help="dataset name, including CICIDS2017")
+                    help="dataset from ['synthetic', 'SMD']")
 parser.add_argument('--model',
                     metavar='-m',
                     type=str,

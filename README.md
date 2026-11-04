@@ -24,29 +24,12 @@ $ python3 preprocess.py SMAP MSL SWaT WADI SMD MSDS UCR MBA NAB
 ```
 Distribution rights to some datasets may not be available. Check the readme files in the `./data/` folder for more details. If you want to ignore a dataset, remove it from the above command to ensure that the preprocessing does not fail.
 
-### CIC-IDS 2017
-
-Place the CIC-IDS 2017 flow CSV files in `data/CIC-IDS2017/` (or
-`data/CICIDS2017/`). Each file must contain the original `Label` column.
-The preprocessing step detects numeric flow features, removes non-finite
-values, fits min-max scaling on benign training flows only, and labels every
-non-`BENIGN` flow as suspicious:
-
-```bash
-$ python3 preprocess.py CICIDS2017 --train-ratio 0.5
-$ python3 main.py --model DTAAD --dataset CICIDS2017 --retrain
-```
-
-The ratio is chronological and identifies benign flows for training; the
-remaining flows, including attacks, are evaluated as the test set. Do not
-commit the dataset itself because it is not distributed with this project.
-
 ## Result Reproduction
 To run a model on a dataset, run the following command:
 ```bash
 $ python3 main.py --model <model> --dataset <dataset> --retrain
 ```
-where `<model>` can be either of 'DTAAD', 'GDN', 'MAD_GAN', 'MTAD_GAT', 'MSCRED', 'USAD', 'OmniAnomaly', 'LSTM_AD', and dataset can be one of 'SMAP', 'MSL', 'SWaT', 'WADI', 'SMD', 'MSDS', 'MBA', 'UCR', 'NAB', and 'CICIDS2017'. To train with 20% data, use the following command
+where `<model>` can be either of 'DTAAD', 'GDN', 'MAD_GAN', 'MTAD_GAT', 'MSCRED', 'USAD', 'OmniAnomaly', 'LSTM_AD', and dataset can be one of 'SMAP', 'MSL', 'SWaT', 'WADI', 'SMD', 'MSDS', 'MBA', 'UCR' and 'NAB. To train with 20% data, use the following command 
 ```bash
 python3 main.py --model <model> --dataset <dataset> --retrain --less
 ```

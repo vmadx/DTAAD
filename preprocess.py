@@ -4,11 +4,10 @@ import pandas as pd
 import numpy as np
 import pickle
 import json
-import argparse
 from src.folderconstants import *
 from shutil import copyfile
 
-datasets = ['synthetic', 'SMD', 'SWaT', 'SMAP', 'MSL', 'WADI', 'MSDS', 'UCR', 'MBA', 'NAB', 'CICIDS2017']
+datasets = ['synthetic', 'SMD', 'SWaT', 'SMAP', 'MSL', 'WADI', 'MSDS', 'UCR', 'MBA', 'NAB']
 
 wadi_drop = ['2_LS_001_AL', '2_LS_002_AL', '2_P_001_STATUS', '2_P_002_STATUS']
 
@@ -57,88 +56,6 @@ def normalize2(a, min_a=None, max_a=None):
 def normalize3(a, min_a=None, max_a=None):
     if min_a is None: min_a, max_a = np.min(a, axis=0), np.max(a, axis=0)
     return ((a - min_a) / (max_a - min_a + 0.0001)) + wgn(a, 50), min_a, max_a
-
-
-def load_cicids2017(train_ratio=0.5):
-    """Prepare CIC-IDS 2017 as an unsupervised anomaly-detection dataset.
-
-    The first chronological portion supplies benign training flows only. The
-    remaining flows are used for testing, with every non-BENIGN flow labelled
-    as suspicious.
-    """
-    input_folders = [
-        os.path.join(data_folder, 'CIC-IDS2017'),
-        os.path.join(data_folder, 'CICIDS2017'),
-    ]
-    csv_files = []
-    for input_folder in input_folders:
-        if os.path.isdir(input_folder):
-            for root, _, filenames in os.walk(input_folder):
-                csv_files.extend(
-                    os.path.join(root, filename)
-                    for filename in filenames
-                    if filename.lower().endswith('.csv')
-                )
-            csv_files.sort()
-        if csv_files:
-            break
-    if not csv_files:
-        raise FileNotFoundError(
-            'CIC-IDS 2017 CSV files not found. Put the dataset under '
-            'data/CIC-IDS2017/ or data/CICIDS2017/.'
-        )
-
-    frames = []
-    for filename in csv_files:
-        frame = pd.read_csv(filename, low_memory=False)
-        frame.columns = [str(column).strip() for column in frame.columns]
-        label_columns = [column for column in frame.columns if column.lower() == 'label']
-        if not label_columns:
-            raise ValueError(f'CIC-IDS 2017 file has no Label column: {filename}')
-        frame = frame.rename(columns={label_columns[0]: 'Label'})
-        frames.append(frame)
-
-    data = pd.concat(frames, ignore_index=True, sort=False)
-    if len(data) < 2:
-        raise ValueError('CIC-IDS 2017 requires at least two flow rows.')
-    labels = data['Label'].fillna('').astype(str).str.strip().str.upper()
-    benign = labels.eq('BENIGN')
-    if not benign.any():
-        raise ValueError('CIC-IDS 2017 data contains no BENIGN flows for training.')
-
-    split = min(max(int(len(data) * train_ratio), 1), len(data) - 1)
-    train_mask = benign & (np.arange(len(data)) < split)
-    if not train_mask.any():
-        benign_indices = np.flatnonzero(benign.to_numpy())
-        train_mask.iloc[benign_indices[:max(1, len(benign_indices) // 2)]] = True
-        split = int(np.flatnonzero(train_mask.to_numpy())[-1]) + 1
-    test_mask = np.arange(len(data)) >= split
-
-    feature_frame = data.drop(columns=['Label'])
-    numeric = feature_frame.apply(pd.to_numeric, errors='coerce')
-    numeric = numeric.replace([np.inf, -np.inf], np.nan)
-    numeric = numeric.dropna(axis=1, how='all')
-    if numeric.shape[1] == 0:
-        raise ValueError('CIC-IDS 2017 contains no usable numeric feature columns.')
-
-    train_frame = numeric.loc[train_mask]
-    test_frame = numeric.loc[test_mask]
-    medians = train_frame.median().fillna(0)
-    train_frame = train_frame.fillna(medians).fillna(0)
-    test_frame = test_frame.fillna(medians).fillna(0)
-    min_values = train_frame.min()
-    ranges = (train_frame.max() - min_values).replace(0, 1)
-    train = ((train_frame - min_values) / ranges).clip(0, 1).to_numpy(dtype=np.float64)
-    test = ((test_frame - min_values) / ranges).clip(0, 1).to_numpy(dtype=np.float64)
-    test_labels = (~labels.loc[test_mask].eq('BENIGN')).to_numpy(dtype=np.float64)
-    test_labels = np.repeat(test_labels[:, None], train.shape[1], axis=1)
-
-    folder = os.path.join(output_folder, 'CICIDS2017')
-    os.makedirs(folder, exist_ok=True)
-    np.save(os.path.join(folder, 'train.npy'), train)
-    np.save(os.path.join(folder, 'test.npy'), test)
-    np.save(os.path.join(folder, 'labels.npy'), test_labels)
-    print(f'CICIDS2017 train={train.shape}, test={test.shape}, suspicious={int(test_labels[:, 0].sum())}')
 
 
 def convertNumpy(df):
@@ -299,26 +216,16 @@ def load_data(dataset):
             labels[ls + i, :] = 1
         for file in ['train', 'test', 'labels']:
             np.save(os.path.join(folder, f'{file}.npy'), eval(file))
-    elif dataset == 'CICIDS2017':
-        load_cicids2017()
     else:
         raise Exception(f'Not Implemented. Check one of {datasets}')
 
 
 if __name__ == '__main__':
-    cli = argparse.ArgumentParser(description='Preprocess DTAAD datasets')
-    cli.add_argument('datasets', nargs='*', choices=datasets)
-    cli.add_argument('--train-ratio', type=float, default=0.5,
-                     help='chronological fraction used to find benign training flows for CICIDS2017')
-    args = cli.parse_args()
-    if not 0 < args.train_ratio < 1:
-        cli.error('--train-ratio must be between 0 and 1')
-    if args.datasets:
-        for d in args.datasets:
-            if d == 'CICIDS2017':
-                load_cicids2017(args.train_ratio)
-            else:
-                load_data(d)
+    commands = sys.argv[1:]
+    load = []
+    if len(commands) > 0:
+        for d in commands:
+            load_data(d)
     else:
-        print("Usage: python preprocess.py <datasets> [--train-ratio FRACTION]")
+        print("Usage: python preprocess.py <datasets>")
         print(f"where <datasets> is space separated list of {datasets}")

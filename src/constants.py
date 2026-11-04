@@ -13,9 +13,8 @@ lm_d = {
     'WADI': [(0.99, 1), (0.999, 1)],
     'MSDS': [(0.91, 1), (0.9, 1.04)],
     'MBA': [(0.87, 1), (0.93, 1.04)],
-    'CICIDS2017': [(0.995, 1), (0.995, 1)],
 }
-lm = lm_d[args.dataset][1 if 'TranAD' in args.model or 'DTAAD' in args.model else 0]
+lm = lm_d[args.dataset][1 if 'TranAD' or 'DTTAD' in args.model else 0]
 
 # Hyperparameters lr
 lr_d = {
@@ -29,7 +28,6 @@ lr_d = {
     'UCR': 0.006,
     'NAB': 0.009,
     'MBA': 0.001,
-    'CICIDS2017': 0.0001,
 }
 lr = lr_d[args.dataset]
 
@@ -45,7 +43,6 @@ percentiles = {
     'UCR': (98, 2),
     'NAB': (98, 2),
     'MBA': (99, 2),
-    'CICIDS2017': (99, 2),
 }
 percentile_merlin = percentiles[args.dataset][0]
 cvp = percentiles[args.dataset][1]

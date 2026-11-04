@@ -408,8 +408,7 @@ if __name__ == '__main__':
 
     ### Plot curves
     if not args.test:
-        if 'TranAD' in model.name or 'DTAAD' in model.name:
-            testO = torch.roll(testO, 1, 0)
+        if 'TranAD' or 'DTAAD' in model.name: testO = torch.roll(testO, 1, 0)
         plotter(f'{args.model}_{args.dataset}', testO, y_pred, loss, labels)
 
     ### Plot attention
@@ -424,7 +423,7 @@ if __name__ == '__main__':
         lt, l, ls = lossT[:, i], loss[:, i], labels[:, i]
         result, pred = pot_eval(lt, l, ls)
         preds.append(pred)
-        df = pd.concat([df, pd.DataFrame([result])], ignore_index=True)
+        df = df.append(result, ignore_index=True)
     # preds = np.concatenate([i.reshape(-1, 1) + 0 for i in preds], axis=1)
     # pd.DataFrame(preds, columns=[str(i) for i in range(10)]).to_csv('labels.csv')
     lossTfinal, lossFinal = np.mean(lossT, axis=1), np.mean(loss, axis=1)
