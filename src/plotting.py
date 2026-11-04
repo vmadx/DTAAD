@@ -4,7 +4,11 @@ import statistics
 import os, torch
 import numpy as np
 
-plt.style.use(['science', 'ieee'])
+try:
+    import scienceplots
+    plt.style.use(['science', 'ieee'])
+except (ImportError, OSError):
+    plt.style.use('default')
 plt.rcParams["text.usetex"] = False
 plt.rcParams['figure.figsize'] = 6, 2
 
