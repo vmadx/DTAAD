@@ -368,20 +368,46 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training=True):
         w_size = model.n_window
         l1s, l2s = [], []
         if training:
-            for d, _ in dataloader:
-                d = d.to(torch.device(args.Device))
-                local_bs = d.shape[0]
-                window = d.permute(0, 2, 1)
-                elem = window[:, :, -1].view(1, local_bs, feats)
-                z = model(window)
-                l1 = _lambda * l(z[0].permute(1, 0, 2), elem) + (1 - _lambda) * l(z[1].permute(1, 0, 2),elem)
-                l1s.append(torch.mean(l1).item())
-                loss = torch.mean(l1)
-                optimizer.zero_grad()
-                loss.backward(retain_graph=True)
-                optimizer.step()
+            total_batches = len(dataloader)
+            batch_start = time()
+            print(
+                f'[DTAAD] epoch {epoch}: starting {total_batches} batches '
+                f'(batch_size={bs}, windows={len(dataset)}, features={feats}, '
+                f'device={args.Device})',
+                flush=True,
+            )
+            try:
+                for batch_index, (d, _) in enumerate(
+                    tqdm(dataloader, desc=f'Epoch {epoch} batches', leave=False),
+                    start=1,
+                ):
+                    d = d.to(torch.device(args.Device), non_blocking=args.Device == 'cuda')
+                    local_bs = d.shape[0]
+                    window = d.permute(0, 2, 1)
+                    elem = window[:, :, -1].view(1, local_bs, feats)
+                    z = model(window)
+                    l1 = _lambda * l(z[0].permute(1, 0, 2), elem) + (1 - _lambda) * l(z[1].permute(1, 0, 2), elem)
+                    l1s.append(torch.mean(l1).item())
+                    loss = torch.mean(l1)
+                    optimizer.zero_grad()
+                    loss.backward(retain_graph=True)
+                    optimizer.step()
+                    if batch_index == 1 or batch_index % 100 == 0 or batch_index == total_batches:
+                        elapsed = time() - batch_start
+                        print(
+                            f'[DTAAD] epoch {epoch} batch {batch_index}/{total_batches} '
+                            f'loss={l1s[-1]:.6f} elapsed={elapsed:.1f}s',
+                            flush=True,
+                        )
+            except KeyboardInterrupt:
+                print(
+                    f'[DTAAD] interrupted during epoch {epoch}, '
+                    f'batch {batch_index}/{total_batches}; no epoch checkpoint was saved.',
+                    flush=True,
+                )
+                raise
             scheduler.step()
-            tqdm.write(f'Epoch {epoch},\tL1 = {np.mean(l1s)}')
+            tqdm.write(f'Epoch {epoch} complete, L1 = {np.mean(l1s):.6f}, batches = {total_batches}')
             return np.mean(l1s), optimizer.param_groups[0]['lr']
         else:
             model.to(torch.device(args.Device))
@@ -422,6 +448,13 @@ if __name__ == '__main__':
         trainO, testO = train_loader.dataset, test_loader.dataset
         trainD = CausalWindowDataset(trainO, model.n_window)
         testD = CausalWindowDataset(testO, model.n_window)
+        print(
+            f'[DTAAD] CICIDS2017 ready: train_rows={len(trainO)}, '
+            f'test_rows={len(testO)}, features={labels.shape[1]}, '
+            f'window={model.n_window}, batch_size={model.batch}, '
+            f'device={args.Device}',
+            flush=True,
+        )
     else:
         trainD, testD = next(iter(train_loader)), next(iter(test_loader))
         trainO, testO = trainD, testD
@@ -436,8 +469,10 @@ if __name__ == '__main__':
         e = epoch + 1
         start = time()
         for e in tqdm(list(range(epoch + 1, epoch + num_epochs + 1))):
+            print(f'[DTAAD] starting epoch {e}/{epoch + num_epochs}', flush=True)
             lossT, lr = backprop(e, model, trainD, trainO, optimizer, scheduler)
             accuracy_list.append((lossT, lr))
+            print(f'[DTAAD] finished epoch {e}, loss={lossT:.6f}, lr={lr:.6g}', flush=True)
         print(color.BOLD + 'Training time: ' + "{:10.4f}".format(time() - start) + ' s' + color.ENDC)
         save_model(model, optimizer, scheduler, e, accuracy_list)
         plot_accuracies(accuracy_list, f'{args.model}_{args.dataset}')
