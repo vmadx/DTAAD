@@ -2,8 +2,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import pickle
-import dgl.nn
-from dgl.nn.pytorch import GATConv
+try:
+    import dgl
+    from dgl.nn.pytorch import GATConv
+except (ImportError, OSError):
+    dgl = None
+    GATConv = None
 from torch.nn import TransformerEncoder
 from src.gltcn import *
 from src.dlutils import *
@@ -270,6 +274,11 @@ class CAE_M(nn.Module):
 class MTAD_GAT(nn.Module):
     def __init__(self, feats):
         super(MTAD_GAT, self).__init__()
+        if dgl is None or GATConv is None:
+            raise ImportError(
+                'MTAD_GAT requires a working DGL installation. '
+                'DTAAD, TranAD, and other non-graph models do not require DGL.'
+            )
         self.name = 'MTAD_GAT'
         self.lr = 0.0001
         self.n_feats = feats
@@ -299,6 +308,11 @@ class MTAD_GAT(nn.Module):
 class GDN(nn.Module):
     def __init__(self, feats):
         super(GDN, self).__init__()
+        if dgl is None or GATConv is None:
+            raise ImportError(
+                'GDN requires a working DGL installation. '
+                'DTAAD, TranAD, and other non-graph models do not require DGL.'
+            )
         self.name = 'GDN'
         self.lr = 0.0001
         self.n_feats = feats
