@@ -14,6 +14,27 @@ from time import time
 from pprint import pprint
 
 
+class CausalWindowDataset(Dataset):
+    def __init__(self, data, window_size):
+        self.data = data
+        self.window_size = window_size
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        start = index - self.window_size + 1
+        if start < 0:
+            window = np.concatenate((
+                np.repeat(self.data[:1], -start, axis=0),
+                np.asarray(self.data[:index + 1]),
+            ), axis=0)
+        else:
+            window = np.asarray(self.data[start:index + 1])
+        window = torch.from_numpy(np.ascontiguousarray(window))
+        return window, window
+
+
 def convert_to_windows(data, model):
     w_size = model.n_window
     if 'DTAAD' in args.model or 'Attention' in args.model or 'TranAD' in args.model:
@@ -43,7 +64,10 @@ def load_dataset(dataset):
         if dataset == 'MSL': file = 'C-1_' + file
         if dataset == 'UCR': file = '136_' + file
         if dataset == 'NAB': file = 'ec2_request_latency_system_failure_' + file
-        loader.append(np.load(os.path.join(folder, f'{file}.npy')))
+        loader.append(np.load(
+            os.path.join(folder, f'{file}.npy'),
+            mmap_mode='r' if dataset == 'CICIDS2017' else None,
+        ))
     # loader = [i[:, debug:debug+1] for i in loader]
     if args.less: loader[0] = cut_array(0.2, loader[0])
     train_loader = DataLoader(loader[0], batch_size=loader[0].shape[0])
@@ -333,10 +357,13 @@ def backprop(epoch, model, data, dataO, optimizer, scheduler, training=True):
         l = nn.MSELoss(reduction='none')
         _lambda = 0.8
         model.to(torch.device(args.Device))
-        data_x = torch.as_tensor(data, dtype=torch.float64)
-        dataset = TensorDataset(data_x, data_x)
+        if isinstance(data, Dataset):
+            dataset = data
+        else:
+            data_x = torch.as_tensor(data, dtype=torch.float64)
+            dataset = TensorDataset(data_x, data_x)
         bs = model.batch
-        dataloader = DataLoader(dataset, batch_size=bs)
+        dataloader = DataLoader(dataset, batch_size=bs, pin_memory=args.Device == 'cuda')
         n = epoch + 1
         w_size = model.n_window
         l1s, l2s = [], []
@@ -391,11 +418,16 @@ if __name__ == '__main__':
     model, optimizer, scheduler, epoch, accuracy_list = load_model(args.model, labels.shape[1])
 
     ## Prepare data
-    trainD, testD = next(iter(train_loader)), next(iter(test_loader))
-    trainO, testO = trainD, testD
-    if model.name in ['Attention', 'DAGMM', 'USAD', 'MSCRED', 'CAE_M', 'GDN', 'MTAD_GAT',
-                      'MAD_GAN', 'TranAD'] or 'DTAAD' in model.name:
-        trainD, testD = convert_to_windows(trainD, model), convert_to_windows(testD, model)
+    if args.dataset == 'CICIDS2017' and 'DTAAD' in model.name:
+        trainO, testO = train_loader.dataset, test_loader.dataset
+        trainD = CausalWindowDataset(trainO, model.n_window)
+        testD = CausalWindowDataset(testO, model.n_window)
+    else:
+        trainD, testD = next(iter(train_loader)), next(iter(test_loader))
+        trainO, testO = trainD, testD
+        if model.name in ['Attention', 'DAGMM', 'USAD', 'MSCRED', 'CAE_M', 'GDN', 'MTAD_GAT',
+                          'MAD_GAN', 'TranAD'] or 'DTAAD' in model.name:
+            trainD, testD = convert_to_windows(trainD, model), convert_to_windows(testD, model)
 
     ### Training phase
     if not args.test:
@@ -417,7 +449,7 @@ if __name__ == '__main__':
     loss, y_pred = backprop(0, model, testD, testO, optimizer, scheduler, training=False)
 
     ### Plot curves
-    if not args.test:
+    if not args.test and args.dataset != 'CICIDS2017':
         if 'TranAD' in model.name or 'DTAAD' in model.name:
             testO = torch.roll(testO, 1, 0)
         plotter(f'{args.model}_{args.dataset}', testO, y_pred, loss, labels)
